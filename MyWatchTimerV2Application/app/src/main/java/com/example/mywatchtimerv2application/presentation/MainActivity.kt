@@ -169,11 +169,18 @@ class TimerService : Service() {
         sendBroadcast(intent)
     }
 
+    // In TimerService class
+
     private fun formatTime(timeMs: Long): String {
         val totalSeconds = timeMs / 1000
-        val minutes = totalSeconds / 60
+
+        // Calculate hours, minutes, and seconds
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
         val seconds = totalSeconds % 60
-        return String.format("%02d:%02d", minutes, seconds)
+
+        // Return string in HH:MM:SS format
+        return String.format("%02d:%02d:%02d", hours, minutes, seconds)
     }
 
     override fun onDestroy() {
@@ -279,11 +286,17 @@ class MainActivity : Activity() {
         updateButtonStates(timeRemaining)
     }
 
+// In MainActivity class
+
     private fun updateTimerDisplay(timeMs: Long) {
         val totalSeconds = timeMs / 1000
-        val minutes = totalSeconds / 60
+
+        // Calculate hours, minutes, and seconds
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
         val seconds = totalSeconds % 60
-        val timeStr = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+
+        val timeStr = String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds)
         timerText.text = timeStr
     }
 
