@@ -35,7 +35,8 @@ class TimerService : Service() {
         const val TIME_LEFT_KEY = "time_left"
 
         // 30 minutes in milliseconds
-        private val INITIAL_TIME_MS = TimeUnit.MINUTES.toMillis(30)
+        // CHANGE THIS LINE: Calculate 1 hour + 15 minutes
+        private val INITIAL_TIME_MS = TimeUnit.HOURS.toMillis(1) + TimeUnit.MINUTES.toMillis(15)
         private const val NOTIFICATION_ID = 101
         private const val CHANNEL_ID = "TimerChannel"
     }
@@ -204,7 +205,8 @@ class MainActivity : Activity() {
 
     private var timerService: TimerService? = null
     private var isBound = false
-    private val INITIAL_TIME_MS = TimeUnit.MINUTES.toMillis(30)
+    // CHANGE THIS LINE: Match the service time (1 hour + 15 minutes)
+    private val INITIAL_TIME_MS = TimeUnit.HOURS.toMillis(1) + TimeUnit.MINUTES.toMillis(15)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
