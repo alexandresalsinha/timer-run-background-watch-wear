@@ -10,6 +10,7 @@ import android.os.CountDownTimer
 import android.os.IBinder
 import android.util.Log
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -200,8 +201,8 @@ class MainActivity : Activity() {
 
     private val TAG = "MainActivity"
     private lateinit var timerText: TextView
-    private lateinit var startStopButton: Button
-    private lateinit var restartButton: Button
+    private lateinit var startStopButton: ImageButton
+//    private lateinit var restartButton: Button
 
     private var timerService: TimerService? = null
     private var isBound = false
@@ -238,8 +239,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         timerText = findViewById(R.id.timer_text)
-        startStopButton = findViewById(R.id.start_stop_button)
-        restartButton = findViewById(R.id.restart_button)
+        startStopButton = findViewById(R.id.btnCigarette)
 
         // Bind to the service
         val serviceIntent = Intent(this, TimerService::class.java)
@@ -254,8 +254,8 @@ class MainActivity : Activity() {
             registerReceiver(timerReceiver, intentFilter)
         }
 
-        startStopButton.setOnClickListener { toggleTimer() }
-        restartButton.setOnClickListener { restartTimer() }
+        startStopButton.setOnClickListener { restartTimer() }
+//        restartButton.setOnClickListener { restartTimer() }
     }
 
     private fun toggleTimer() {
@@ -307,11 +307,11 @@ class MainActivity : Activity() {
 
         val running = timerService!!.isTimerRunning()
 
-        startStopButton.text = when {
-            running -> "PAUSE"
-            timeRemaining > 0 && timeRemaining < INITIAL_TIME_MS -> "RESUME"
-            else -> "START"
-        }
+//        startStopButton.text = when {
+//            running -> "PAUSE"
+//            timeRemaining > 0 && timeRemaining < INITIAL_TIME_MS -> "RESUME"
+//            else -> "START"
+//        }
     }
 
     override fun onDestroy() {
@@ -322,3 +322,39 @@ class MainActivity : Activity() {
         }
     }
 }
+
+// --- Persistence Constants and Functions ---
+const val PREFS_NAME = "SmokedPrefs"
+const val CIG_COUNT_KEY = "cig_smoked_count" // Renamed for clarity
+const val CIG_LAST_RESET_TIME_KEY = "cig_last_reset_time" // Renamed for clarity
+const val WEED_COUNT_KEY = "weed_smoked_count" // New key
+const val WEED_LAST_RESET_TIME_KEY = "weed_last_reset_time" // New key
+
+/**
+ * Loads a specific smoked count from SharedPreferences.
+ */
+fun loadCount(context: Context, key: String): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(key, 0)
+}
+
+/**
+ * Loads a specific last reset time (timestamp in milliseconds) from SharedPreferences.
+ */
+fun loadLastResetTime(context: Context, key: String): Long {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getLong(key, 0L)
+}
+
+/**
+ * Saves a specific smoked count and its corresponding last action time to SharedPreferences.
+ */
+fun saveSmokedData(context: Context, countKey: String, count: Int, timeKey: String, currentTime: Long) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit()
+        .putInt(countKey, count)
+        .putLong(timeKey, currentTime)
+        .apply()
+}
+// --- End Persistence Functions ---
+
