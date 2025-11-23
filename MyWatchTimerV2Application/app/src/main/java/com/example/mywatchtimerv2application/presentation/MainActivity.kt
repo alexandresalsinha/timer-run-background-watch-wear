@@ -12,6 +12,7 @@ import android.util.Log
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.compose.ui.semantics.text
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.mywatchtimerv2application.R
@@ -35,7 +36,6 @@ class TimerService : Service() {
         const val TIMER_BR = "com.example.myapplication.presentation.timer_broadcast"
         const val TIME_LEFT_KEY = "time_left"
 
-        // 30 minutes in milliseconds
         // CHANGE THIS LINE: Calculate 1 hour + 15 minutes
         private val INITIAL_TIME_MS = TimeUnit.HOURS.toMillis(1) + TimeUnit.MINUTES.toMillis(15)
         private const val NOTIFICATION_ID = 101
@@ -163,25 +163,17 @@ class TimerService : Service() {
     }
 
     private fun sendUpdateBroadcast(time: Long) {
-        val intent = Intent(TIMER_BR).setPackage(/* TODO: provide the application ID. For example: */
-            packageName
-        ).apply {
+        val intent = Intent(TIMER_BR).setPackage(packageName).apply {
             putExtra(TIME_LEFT_KEY, time)
         }
         sendBroadcast(intent)
     }
 
-    // In TimerService class
-
     private fun formatTime(timeMs: Long): String {
         val totalSeconds = timeMs / 1000
-
-        // Calculate hours, minutes, and seconds
         val hours = totalSeconds / 3600
         val minutes = (totalSeconds % 3600) / 60
         val seconds = totalSeconds % 60
-
-        // Return string in HH:MM:SS format
         return String.format("%02d:%02d:%02d", hours, minutes, seconds)
     }
 
@@ -192,7 +184,6 @@ class TimerService : Service() {
     }
 }
 
-
 // ---
 // 2. MAIN ACTIVITY CLASS (The UI and Communication Handler)
 // ---
@@ -200,13 +191,22 @@ class TimerService : Service() {
 class MainActivity : Activity() {
 
     private val TAG = "MainActivity"
+    // Timer UI
     private lateinit var timerText: TextView
-    private lateinit var startStopButton: ImageButton
-//    private lateinit var restartButton: Button
+    private lateinit var btnCigarette: ImageButton
+    private lateinit var btnWeed: ImageButton
 
+    // Counter UI
+    private lateinit var tvCigCount: TextView
+    private lateinit var tvWeedCount: TextView
+
+    // Counter State
+    private var cigaretteCount: Int = 0
+    private var weedCount: Int = 0
+
+    // Timer Service
     private var timerService: TimerService? = null
     private var isBound = false
-    // CHANGE THIS LINE: Match the service time (1 hour + 15 minutes)
     private val INITIAL_TIME_MS = TimeUnit.HOURS.toMillis(1) + TimeUnit.MINUTES.toMillis(15)
 
     private val serviceConnection = object : ServiceConnection {
@@ -238,14 +238,23 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // --- Initialize UI components ---
         timerText = findViewById(R.id.timer_text)
-        startStopButton = findViewById(R.id.btnCigarette)
+        btnCigarette = findViewById(R.id.btnCigarette)
+        btnWeed = findViewById(R.id.btnWeed) // Make sure this ID exists in your XML
+        tvCigCount = findViewById(R.id.tvCigCount) // Make sure this ID exists in your XML
+        tvWeedCount = findViewById(R.id.tvWeedCount) // Make sure this ID exists in your XML
 
-        // Bind to the service
+        // --- Load persistent counts and update UI ---
+        cigaretteCount = loadCount(this, CIG_COUNT_KEY)
+        weedCount = loadCount(this, WEED_COUNT_KEY)
+        updateCounterUI()
+
+        // --- Bind to the timer service ---
         val serviceIntent = Intent(this, TimerService::class.java)
         bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
 
-        // FIX: Register the Broadcast Receiver with the required export flag for Android 13+
+        // --- Register Broadcast Receiver ---
         val intentFilter = IntentFilter(TimerService.TIMER_BR)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(timerReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -254,21 +263,29 @@ class MainActivity : Activity() {
             registerReceiver(timerReceiver, intentFilter)
         }
 
-        startStopButton.setOnClickListener { restartTimer() }
-//        restartButton.setOnClickListener { restartTimer() }
+        // --- Setup Click Listeners ---
+        btnCigarette.setOnClickListener {
+            // Increment and save the count
+            cigaretteCount++
+            saveSmokedData(this, CIG_COUNT_KEY, cigaretteCount, CIG_LAST_RESET_TIME_KEY, System.currentTimeMillis())
+            updateCounterUI()
+            // Restart the timer
+            restartTimer()
+        }
+
+        btnWeed.setOnClickListener {
+            // Increment and save the count
+            weedCount++
+            saveSmokedData(this, WEED_COUNT_KEY, weedCount, WEED_LAST_RESET_TIME_KEY, System.currentTimeMillis())
+            updateCounterUI()
+            // You might want a different timer for weed, but for now it also restarts the main timer.
+            restartTimer()
+        }
     }
 
-    private fun toggleTimer() {
-        if (!isBound || timerService == null) return
-
-        val intent = Intent(this, TimerService::class.java)
-        if (timerService!!.isTimerRunning()) {
-            intent.action = TimerService.ACTION_STOP
-        } else {
-            intent.action = TimerService.ACTION_START
-        }
-        ContextCompat.startForegroundService(this, intent)
-        updateUI()
+    private fun updateCounterUI() {
+        tvCigCount.text = "Cigarettes: $cigaretteCount"
+        tvWeedCount.text = "Weed: $weedCount"
     }
 
     private fun restartTimer() {
@@ -288,12 +305,8 @@ class MainActivity : Activity() {
         updateButtonStates(timeRemaining)
     }
 
-// In MainActivity class
-
     private fun updateTimerDisplay(timeMs: Long) {
         val totalSeconds = timeMs / 1000
-
-        // Calculate hours, minutes, and seconds
         val hours = totalSeconds / 3600
         val minutes = (totalSeconds % 3600) / 60
         val seconds = totalSeconds % 60
@@ -304,14 +317,8 @@ class MainActivity : Activity() {
 
     private fun updateButtonStates(timeRemaining: Long) {
         if (!isBound || timerService == null) return
-
         val running = timerService!!.isTimerRunning()
-
-//        startStopButton.text = when {
-//            running -> "PAUSE"
-//            timeRemaining > 0 && timeRemaining < INITIAL_TIME_MS -> "RESUME"
-//            else -> "START"
-//        }
+        // Alpha state can be updated here if needed, e.g., btnCigarette.alpha = if(running) 1.0f else 0.5f
     }
 
     override fun onDestroy() {
@@ -325,10 +332,10 @@ class MainActivity : Activity() {
 
 // --- Persistence Constants and Functions ---
 const val PREFS_NAME = "SmokedPrefs"
-const val CIG_COUNT_KEY = "cig_smoked_count" // Renamed for clarity
-const val CIG_LAST_RESET_TIME_KEY = "cig_last_reset_time" // Renamed for clarity
-const val WEED_COUNT_KEY = "weed_smoked_count" // New key
-const val WEED_LAST_RESET_TIME_KEY = "weed_last_reset_time" // New key
+const val CIG_COUNT_KEY = "cig_smoked_count"
+const val CIG_LAST_RESET_TIME_KEY = "cig_last_reset_time"
+const val WEED_COUNT_KEY = "weed_smoked_count"
+const val WEED_LAST_RESET_TIME_KEY = "weed_last_reset_time"
 
 /**
  * Loads a specific smoked count from SharedPreferences.
@@ -357,4 +364,3 @@ fun saveSmokedData(context: Context, countKey: String, count: Int, timeKey: Stri
         .apply()
 }
 // --- End Persistence Functions ---
-
