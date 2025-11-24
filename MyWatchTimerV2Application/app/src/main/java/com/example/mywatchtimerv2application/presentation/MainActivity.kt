@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.text
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.mywatchtimerv2application.R
+import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -213,7 +214,7 @@ class MainActivity : Activity() {
     private lateinit var timerText: TextView
     private lateinit var btnCigarette: ImageButton
     private lateinit var btnWeed: ImageButton
-    private lateinit var btnReset: ImageButton // <<< NEW: Reset button view
+    private lateinit var btnReset: ImageButton
     private lateinit var tvCigCount: TextView
     private lateinit var tvWeedCount: TextView
 
@@ -257,14 +258,20 @@ class MainActivity : Activity() {
         timerText = findViewById(R.id.timer_text)
         btnCigarette = findViewById(R.id.btnCigarette)
         btnWeed = findViewById(R.id.btnWeed)
-        btnReset = findViewById(R.id.btnReset) // <<< NEW: Find reset button
+        btnReset = findViewById(R.id.btnReset)
         tvCigCount = findViewById(R.id.tvCigCount)
         tvWeedCount = findViewById(R.id.tvWeedCount)
 
-        // Load persistent counts and update UI
+        // Load persistent counts
         cigaretteCount = loadCount(this, CIG_COUNT_KEY)
         weedCount = loadCount(this, WEED_COUNT_KEY)
+
+        // <<< NEW: Check if counters need to be reset automatically
+        checkAndResetCountersIfNeeded()
+
+        // Update UI with loaded (or newly reset) counts
         updateCounterUI()
+
 
         // Bind to the timer service
         val serviceIntent = Intent(this, TimerService::class.java)
@@ -289,31 +296,51 @@ class MainActivity : Activity() {
             restartTimer()
         }
 
-        // <<< NEW: Set click listener for the reset button
+        // Set click listener for the manual reset button
         btnReset.setOnClickListener {
-            resetCounters()
+            showResetConfirmationDialog()
         }
     }
 
-    // <<< NEW: Function to reset counters
-    private fun resetCounters() {
-        // Create an alert dialog to confirm the reset
+    // <<< NEW: Logic to check for daily reset
+    private fun checkAndResetCountersIfNeeded() {
+        val lastResetTime = loadLastResetTime(this, LAST_APP_OPEN_KEY)
+        val now = Calendar.getInstance()
+        val lastResetCal = Calendar.getInstance().apply { timeInMillis = lastResetTime }
+
+        val isNewDay = now.get(Calendar.DAY_OF_YEAR) != lastResetCal.get(Calendar.DAY_OF_YEAR) ||
+                now.get(Calendar.YEAR) != lastResetCal.get(Calendar.YEAR)
+
+        if (isNewDay && now.get(Calendar.HOUR_OF_DAY) >= 9) {
+            // It's a new day and it's 9 AM or later, so reset the counters
+            performReset()
+            // Store the timestamp of this automatic reset
+            saveLastResetTime(this, LAST_APP_OPEN_KEY, now.timeInMillis)
+        }
+    }
+
+    // <<< NEW: Manual reset confirmation dialog
+    private fun showResetConfirmationDialog() {
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Reset Counters")
             .setMessage("Are you sure you want to reset the cigarette and weed counts?")
-            .setPositiveButton("Reset") { dialog, which ->
-                // User clicked "Reset", proceed with resetting
-                cigaretteCount = 0
-                weedCount = 0
-                // Save the reset values to SharedPreferences
-                saveSmokedData(this, CIG_COUNT_KEY, cigaretteCount, CIG_LAST_RESET_TIME_KEY, 0L)
-                saveSmokedData(this, WEED_COUNT_KEY, weedCount, WEED_LAST_RESET_TIME_KEY, 0L)
-                // Update the UI
-                updateCounterUI()
+            .setPositiveButton("Reset") { _, _ ->
+                performReset() // User confirmed, proceed with resetting
             }
             .setNegativeButton("Cancel", null) // Do nothing on "Cancel"
             .setIcon(R.drawable.baseline_settings_backup_restore_24)
             .show()
+    }
+
+    // <<< NEW: The actual reset logic, now in its own function
+    private fun performReset() {
+        cigaretteCount = 0
+        weedCount = 0
+        // Save the reset values to SharedPreferences
+        saveSmokedData(this, CIG_COUNT_KEY, cigaretteCount, CIG_LAST_RESET_TIME_KEY, 0L)
+        saveSmokedData(this, WEED_COUNT_KEY, weedCount, WEED_LAST_RESET_TIME_KEY, 0L)
+        // Update the UI
+        updateCounterUI()
     }
 
     private fun updateCounterUI() {
@@ -361,12 +388,13 @@ class MainActivity : Activity() {
     }
 }
 
-// --- Persistence Constants and Functions (Unchanged) ---
+// --- Persistence Constants and Functions ---
 const val PREFS_NAME = "SmokedPrefs"
 const val CIG_COUNT_KEY = "cig_smoked_count"
 const val CIG_LAST_RESET_TIME_KEY = "cig_last_reset_time"
 const val WEED_COUNT_KEY = "weed_smoked_count"
 const val WEED_LAST_RESET_TIME_KEY = "weed_last_reset_time"
+const val LAST_APP_OPEN_KEY = "last_app_open_time" // <<< NEW KEY
 
 fun loadCount(context: Context, key: String): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -376,6 +404,12 @@ fun loadCount(context: Context, key: String): Int {
 fun loadLastResetTime(context: Context, key: String): Long {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getLong(key, 0L)
+}
+
+// <<< NEW: Function to save only a timestamp
+fun saveLastResetTime(context: Context, key: String, currentTime: Long) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putLong(key, currentTime).apply()
 }
 
 fun saveSmokedData(context: Context, countKey: String, count: Int, timeKey: String, currentTime: Long) {
