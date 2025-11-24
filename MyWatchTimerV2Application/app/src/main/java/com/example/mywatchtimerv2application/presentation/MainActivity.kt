@@ -2,6 +2,7 @@ package com.example.mywatchtimerv2application.presentation
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -29,9 +30,8 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 // ---
-// 1. TIMER SERVICE CLASS (Refactored to allow negative counting)
+// 1. TIMER SERVICE CLASS (Unchanged)
 // ---
-
 class TimerService : Service() {
     private val TAG = "TimerService"
 
@@ -41,7 +41,7 @@ class TimerService : Service() {
         const val ACTION_RESTART = "ACTION_RESTART"
         const val TIMER_BR = "com.example.myapplication.presentation.timer_broadcast"
         const val TIME_LEFT_KEY = "time_left"
-        const val IS_OVERTIME_KEY = "is_overtime" // Key to broadcast overtime state
+        const val IS_OVERTIME_KEY = "is_overtime"
 
         private val INITIAL_TIME_MS = TimeUnit.HOURS.toMillis(1) + TimeUnit.MINUTES.toMillis(15)
         private const val NOTIFICATION_ID = 101
@@ -49,9 +49,9 @@ class TimerService : Service() {
     }
 
     private var mainTimer: CountDownTimer? = null
-    private var overtimeTimer: CountDownTimer? = null // Timer for counting up
+    private var overtimeTimer: CountDownTimer? = null
     private var timeRemaining: Long = INITIAL_TIME_MS
-    private var overtimeCounter: Long = 0 // Stores the overtime in ms
+    private var overtimeCounter: Long = 0
     private var isRunning: Boolean = false
     private var isOvertime: Boolean = false
 
@@ -77,16 +77,13 @@ class TimerService : Service() {
         return START_STICKY
     }
 
-    // --- Service Control Methods ---
     fun startTimer() {
         if (isRunning) return
         isRunning = true
 
         if (isOvertime) {
-            // If resuming from a paused overtime state, restart the overtime timer
             startOvertimeTimer()
         } else {
-            // Otherwise, start the main countdown
             mainTimer?.cancel()
             mainTimer = object : CountDownTimer(timeRemaining, 1000) {
                 override fun onTick(millisUntilFinished: Long) {
@@ -98,13 +95,12 @@ class TimerService : Service() {
                 override fun onFinish() {
                     isOvertime = true
                     timeRemaining = 0
-                    overtimeCounter = 0 // Reset overtime
-                    startOvertimeTimer() // Start counting up
+                    overtimeCounter = 0
+                    startOvertimeTimer()
                 }
             }.start()
         }
-
-        updateNotification(timeRemaining, "Running...")
+        updateNotification(if (isOvertime) overtimeCounter else timeRemaining, "Running...")
         sendUpdateBroadcast()
     }
 
@@ -112,29 +108,28 @@ class TimerService : Service() {
         overtimeTimer?.cancel()
         overtimeTimer = object : CountDownTimer(Long.MAX_VALUE, 1000) {
             override fun onTick(millisUntilFinished: Long) {
-                overtimeCounter += 1000 // Increment by one second
+                overtimeCounter += 1000
                 updateNotification(overtimeCounter, "Overtime...")
                 sendUpdateBroadcast()
             }
-
-            override fun onFinish() { /* Will not be called */ }
+            override fun onFinish() { /* Unreachable */ }
         }.start()
     }
 
     fun pauseTimer() {
         isRunning = false
         mainTimer?.cancel()
-        overtimeTimer?.cancel() // Pause both timers
+        overtimeTimer?.cancel()
         updateNotification(if (isOvertime) overtimeCounter else timeRemaining, "Paused")
         sendUpdateBroadcast()
     }
 
     fun restartTimer() {
-        pauseTimer() // Stop everything first
+        pauseTimer()
         timeRemaining = INITIAL_TIME_MS
         isOvertime = false
         overtimeCounter = 0
-        startTimer() // Start the main countdown fresh
+        startTimer()
     }
 
     fun isTimerRunning(): Boolean = isRunning
@@ -142,7 +137,6 @@ class TimerService : Service() {
     fun getOvertime(): Long = overtimeCounter
     fun isOvertime(): Boolean = isOvertime
 
-    // --- Notification & Broadcast Methods ---
     private fun sendUpdateBroadcast() {
         val intent = Intent(TIMER_BR).setPackage(packageName).apply {
             putExtra(TIME_LEFT_KEY, if (isOvertime) overtimeCounter else timeRemaining)
@@ -156,8 +150,6 @@ class TimerService : Service() {
         val hours = totalSeconds / 3600
         val minutes = (totalSeconds % 3600) / 60
         val seconds = totalSeconds % 60
-
-        // Add a negative sign if in overtime
         val prefix = if (isNegative) "-" else ""
         return String.format("%s%02d:%02d:%02d", prefix, hours, minutes, seconds)
     }
@@ -169,7 +161,6 @@ class TimerService : Service() {
     }
 
     private fun buildNotification(time: Long, status: String): Notification {
-        // Use the new formatTime function
         val timeStr = formatTime(time, isOvertime)
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
@@ -177,11 +168,10 @@ class TimerService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Timer")
             .setContentText("$timeStr | $status")
-            .setSmallIcon(R.drawable.cigarette_icon) // Using the app icon
+            .setSmallIcon(R.drawable.cigarette_icon)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
 
-        // Action buttons logic can remain the same
         if (isRunning) {
             builder.addAction(0, "Pause", getPendingIntent(ACTION_STOP))
         } else {
@@ -192,7 +182,6 @@ class TimerService : Service() {
         return builder.build()
     }
 
-    // Unchanged methods: createNotificationChannel, getPendingIntent
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val serviceChannel = NotificationChannel(CHANNEL_ID, "Timer Service Channel", NotificationManager.IMPORTANCE_LOW)
@@ -217,24 +206,20 @@ class TimerService : Service() {
 // ---
 // 2. MAIN ACTIVITY CLASS (The UI and Communication Handler)
 // ---
-
 class MainActivity : Activity() {
 
     private val TAG = "MainActivity"
-    // Timer UI
+    // UI
     private lateinit var timerText: TextView
     private lateinit var btnCigarette: ImageButton
     private lateinit var btnWeed: ImageButton
-
-    // Counter UI
+    private lateinit var btnReset: ImageButton // <<< NEW: Reset button view
     private lateinit var tvCigCount: TextView
     private lateinit var tvWeedCount: TextView
 
-    // Counter State
+    // State
     private var cigaretteCount: Int = 0
     private var weedCount: Int = 0
-
-    // Timer Service
     private var timerService: TimerService? = null
     private var isBound = false
 
@@ -252,13 +237,12 @@ class MainActivity : Activity() {
         }
     }
 
-    // MODIFIED: Handle overtime state from broadcast
     private val timerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == TimerService.TIMER_BR) {
                 val time = intent.getLongExtra(TimerService.TIME_LEFT_KEY, 0)
                 val isOvertime = intent.getBooleanExtra(TimerService.IS_OVERTIME_KEY, false)
-                updateTimerDisplay(time, isOvertime) // Pass overtime state to UI update
+                updateTimerDisplay(time, isOvertime)
                 updateButtonStates()
             }
         }
@@ -269,27 +253,28 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // --- Initialize UI components ---
+        // Initialize UI components
         timerText = findViewById(R.id.timer_text)
         btnCigarette = findViewById(R.id.btnCigarette)
         btnWeed = findViewById(R.id.btnWeed)
+        btnReset = findViewById(R.id.btnReset) // <<< NEW: Find reset button
         tvCigCount = findViewById(R.id.tvCigCount)
         tvWeedCount = findViewById(R.id.tvWeedCount)
 
-        // --- Load persistent counts and update UI ---
+        // Load persistent counts and update UI
         cigaretteCount = loadCount(this, CIG_COUNT_KEY)
         weedCount = loadCount(this, WEED_COUNT_KEY)
         updateCounterUI()
 
-        // --- Bind to the timer service ---
+        // Bind to the timer service
         val serviceIntent = Intent(this, TimerService::class.java)
         bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
 
-        // --- Register Broadcast Receiver ---
+        // Register Broadcast Receiver
         val intentFilter = IntentFilter(TimerService.TIMER_BR)
         ContextCompat.registerReceiver(this, timerReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
-        // --- Setup Click Listeners ---
+        // Setup Click Listeners
         btnCigarette.setOnClickListener {
             cigaretteCount++
             saveSmokedData(this, CIG_COUNT_KEY, cigaretteCount, CIG_LAST_RESET_TIME_KEY, System.currentTimeMillis())
@@ -303,6 +288,32 @@ class MainActivity : Activity() {
             updateCounterUI()
             restartTimer()
         }
+
+        // <<< NEW: Set click listener for the reset button
+        btnReset.setOnClickListener {
+            resetCounters()
+        }
+    }
+
+    // <<< NEW: Function to reset counters
+    private fun resetCounters() {
+        // Create an alert dialog to confirm the reset
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Reset Counters")
+            .setMessage("Are you sure you want to reset the cigarette and weed counts?")
+            .setPositiveButton("Reset") { dialog, which ->
+                // User clicked "Reset", proceed with resetting
+                cigaretteCount = 0
+                weedCount = 0
+                // Save the reset values to SharedPreferences
+                saveSmokedData(this, CIG_COUNT_KEY, cigaretteCount, CIG_LAST_RESET_TIME_KEY, 0L)
+                saveSmokedData(this, WEED_COUNT_KEY, weedCount, WEED_LAST_RESET_TIME_KEY, 0L)
+                // Update the UI
+                updateCounterUI()
+            }
+            .setNegativeButton("Cancel", null) // Do nothing on "Cancel"
+            .setIcon(R.drawable.baseline_settings_backup_restore_24)
+            .show()
     }
 
     private fun updateCounterUI() {
@@ -319,33 +330,26 @@ class MainActivity : Activity() {
         updateUI()
     }
 
-    // Update UI based on service state
     private fun updateUI() {
         if (!isBound || timerService == null) return
-
         val isOvertime = timerService!!.isOvertime()
         val time = if (isOvertime) timerService!!.getOvertime() else timerService!!.getTimeRemaining()
-
         updateTimerDisplay(time, isOvertime)
         updateButtonStates()
     }
 
-    // MODIFIED: Accept overtime state to format text correctly
     private fun updateTimerDisplay(timeMs: Long, isOvertime: Boolean) {
         val totalSeconds = timeMs / 1000
         val hours = totalSeconds / 3600
         val minutes = (totalSeconds % 3600) / 60
         val seconds = totalSeconds % 60
-
         val prefix = if (isOvertime) "-" else ""
         timerText.text = String.format(Locale.getDefault(), "%s%02d:%02d:%02d", prefix, hours, minutes, seconds)
     }
 
     private fun updateButtonStates() {
         if (!isBound || timerService == null) return
-        val running = timerService!!.isTimerRunning()
         // You can add visual feedback for running/paused state here if you wish
-        // e.g., btnCigarette.alpha = if(running) 1.0f else 0.5f
     }
 
     override fun onDestroy() {
