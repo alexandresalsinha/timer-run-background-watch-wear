@@ -32,7 +32,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 // ---
-// 1. TIMER SERVICE CLASS (Corrected for reliable background overtime)
+// 1. TIMER SERVICE CLASS (Unchanged)
 // ---
 class TimerService : Service() {
     private val TAG = "TimerService"
@@ -51,9 +51,9 @@ class TimerService : Service() {
     }
 
     private var mainTimer: CountDownTimer? = null
-    private var overtimeTimer: CountDownTimer? = null // Timer for counting up
+    private var overtimeTimer: CountDownTimer? = null
     private var timeRemaining: Long = INITIAL_TIME_MS
-    private var overtimeCounter: Long = 0 // Stores the overtime in ms
+    private var overtimeCounter: Long = 0
     private var isRunning: Boolean = false
     private var isOvertime: Boolean = false
 
@@ -84,10 +84,8 @@ class TimerService : Service() {
         isRunning = true
 
         if (isOvertime) {
-            // If resuming from a paused overtime state, restart the overtime timer
             startOvertimeTimer()
         } else {
-            // Otherwise, start the main countdown
             mainTimer?.cancel()
             mainTimer = object : CountDownTimer(timeRemaining, 1000) {
                 override fun onTick(millisUntilFinished: Long) {
@@ -99,12 +97,11 @@ class TimerService : Service() {
                 override fun onFinish() {
                     isOvertime = true
                     timeRemaining = 0
-                    overtimeCounter = 0 // Reset overtime
-                    startOvertimeTimer() // Start counting up
+                    overtimeCounter = 0
+                    startOvertimeTimer()
                 }
             }.start()
         }
-
         updateNotification(if (isOvertime) overtimeCounter else timeRemaining, "Running...")
         sendUpdateBroadcast()
     }
@@ -113,32 +110,30 @@ class TimerService : Service() {
         overtimeTimer?.cancel()
         overtimeTimer = object : CountDownTimer(Long.MAX_VALUE, 1000) {
             override fun onTick(millisUntilFinished: Long) {
-                overtimeCounter += 1000 // Increment by one second
+                overtimeCounter += 1000
                 updateNotification(overtimeCounter, "Overtime...")
                 sendUpdateBroadcast()
             }
-
-            override fun onFinish() { /* Will not be called */ }
+            override fun onFinish() { /* Unreachable */ }
         }.start()
     }
 
     fun pauseTimer() {
         isRunning = false
         mainTimer?.cancel()
-        overtimeTimer?.cancel() // Pause both timers
+        overtimeTimer?.cancel()
         updateNotification(if (isOvertime) overtimeCounter else timeRemaining, "Paused")
         sendUpdateBroadcast()
     }
 
     fun restartTimer() {
-        pauseTimer() // Stop everything first
+        pauseTimer()
         timeRemaining = INITIAL_TIME_MS
         isOvertime = false
         overtimeCounter = 0
-        startTimer() // Start the main countdown fresh
+        startTimer()
     }
 
-    // Public accessors for the bound activity
     fun isTimerRunning(): Boolean = isRunning
     fun getTimeRemaining(): Long = timeRemaining
     fun getOvertime(): Long = overtimeCounter
@@ -146,7 +141,6 @@ class TimerService : Service() {
 
     private fun sendUpdateBroadcast() {
         val intent = Intent(TIMER_BR).setPackage(packageName).apply {
-            // Send the correct time value based on the current state
             putExtra(TIME_LEFT_KEY, if (isOvertime) overtimeCounter else timeRemaining)
             putExtra(IS_OVERTIME_KEY, isOvertime)
         }
@@ -169,7 +163,7 @@ class TimerService : Service() {
     }
 
     private fun buildNotification(time: Long, status: String): Notification {
-        val timeStr = formatTime(time, isOvertime) // Use the state to format correctly
+        val timeStr = formatTime(time, isOvertime)
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
 
@@ -225,10 +219,14 @@ class MainActivity : Activity() {
     private lateinit var btnReset: ImageButton
     private lateinit var tvCigCount: TextView
     private lateinit var tvWeedCount: TextView
+    private lateinit var tvCigEntries: TextView // <<< NEW
+    private lateinit var tvWeedEntries: TextView // <<< NEW
 
     // State
     private var cigaretteCount: Int = 0
     private var weedCount: Int = 0
+    private var cigEntries = mutableListOf<String>() // <<< NEW
+    private var weedEntries = mutableListOf<String>() // <<< NEW
     private var timerService: TimerService? = null
     private var isBound = false
 
@@ -237,7 +235,7 @@ class MainActivity : Activity() {
             val binder = service as TimerService.LocalBinder
             timerService = binder.getService()
             isBound = true
-            updateUI() // Initial UI sync with service state
+            updateUI()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -246,13 +244,12 @@ class MainActivity : Activity() {
         }
     }
 
-    // BroadcastReceiver now handles all UI updates from the service
     private val timerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == TimerService.TIMER_BR) {
                 val time = intent.getLongExtra(TimerService.TIME_LEFT_KEY, 0)
                 val isOvertime = intent.getBooleanExtra(TimerService.IS_OVERTIME_KEY, false)
-                updateTimerDisplay(time, isOvertime) // Update UI with data from service
+                updateTimerDisplay(time, isOvertime)
                 updateButtonStates()
             }
         }
@@ -271,13 +268,15 @@ class MainActivity : Activity() {
         btnReset = findViewById(R.id.btnReset)
         tvCigCount = findViewById(R.id.tvCigCount)
         tvWeedCount = findViewById(R.id.tvWeedCount)
+        tvCigEntries = findViewById(R.id.tvCigEntries) // <<< NEW
+        tvWeedEntries = findViewById(R.id.tvWeedEntries) // <<< NEW
 
-        // Load persistent counts
-        cigaretteCount = loadCount(this, CIG_COUNT_KEY)
-        weedCount = loadCount(this, WEED_COUNT_KEY)
+        // Load persistent data
+        loadAllData()
 
         checkAndResetCountersIfNeeded()
         updateCounterUI()
+        updateEntriesUI() // <<< NEW
 
         // Bind to the timer service
         val serviceIntent = Intent(this, TimerService::class.java)
@@ -288,16 +287,22 @@ class MainActivity : Activity() {
 
         // Setup Click Listeners
         btnCigarette.setOnClickListener {
+            val currentTime = System.currentTimeMillis()
             cigaretteCount++
-            saveSmokedData(this, CIG_COUNT_KEY, cigaretteCount, CIG_LAST_RESET_TIME_KEY, System.currentTimeMillis())
+            cigEntries.add(formatTimestamp(currentTime)) // <<< NEW
+            saveEntryData(this, CIG_COUNT_KEY, cigaretteCount, CIG_ENTRIES_KEY, cigEntries.toSet())
             updateCounterUI()
+            updateEntriesUI() // <<< NEW
             restartTimer()
         }
 
         btnWeed.setOnClickListener {
+            val currentTime = System.currentTimeMillis()
             weedCount++
-            saveSmokedData(this, WEED_COUNT_KEY, weedCount, WEED_LAST_RESET_TIME_KEY, System.currentTimeMillis())
+            weedEntries.add(formatTimestamp(currentTime)) // <<< NEW
+            saveEntryData(this, WEED_COUNT_KEY, weedCount, WEED_ENTRIES_KEY, weedEntries.toSet())
             updateCounterUI()
+            updateEntriesUI() // <<< NEW
             restartTimer()
         }
 
@@ -323,7 +328,7 @@ class MainActivity : Activity() {
     private fun showResetConfirmationDialog() {
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Reset Counters")
-            .setMessage("Are you sure you want to reset the cigarette and weed counts?")
+            .setMessage("Are you sure you want to reset all counts and entries?")
             .setPositiveButton("Reset") { _, _ ->
                 performReset()
             }
@@ -335,14 +340,23 @@ class MainActivity : Activity() {
     private fun performReset() {
         cigaretteCount = 0
         weedCount = 0
-        saveSmokedData(this, CIG_COUNT_KEY, cigaretteCount, CIG_LAST_RESET_TIME_KEY, 0L)
-        saveSmokedData(this, WEED_COUNT_KEY, weedCount, WEED_LAST_RESET_TIME_KEY, 0L)
+        cigEntries.clear() // <<< NEW
+        weedEntries.clear() // <<< NEW
+        saveEntryData(this, CIG_COUNT_KEY, cigaretteCount, CIG_ENTRIES_KEY, cigEntries.toSet())
+        saveEntryData(this, WEED_COUNT_KEY, weedCount, WEED_ENTRIES_KEY, weedEntries.toSet())
         updateCounterUI()
+        updateEntriesUI() // <<< NEW
     }
 
     private fun updateCounterUI() {
         tvCigCount.text = "Cigarettes: $cigaretteCount"
         tvWeedCount.text = "Weed: $weedCount"
+    }
+
+    // <<< NEW: Function to update the entry logs
+    private fun updateEntriesUI() {
+        tvCigEntries.text = if (cigEntries.isNotEmpty()) "Cigarettes:\n" + cigEntries.joinToString("\n") else ""
+        tvWeedEntries.text = if (weedEntries.isNotEmpty()) "Weed:\n" + weedEntries.joinToString("\n") else ""
     }
 
     private fun restartTimer() {
@@ -355,7 +369,6 @@ class MainActivity : Activity() {
         updateEndTimeDisplay()
     }
 
-    // Syncs the entire UI with the current state of the service
     private fun updateUI() {
         if (!isBound || timerService == null) return
         val isOvertime = timerService!!.isOvertime()
@@ -373,7 +386,7 @@ class MainActivity : Activity() {
         timerText.text = String.format(Locale.getDefault(), "%s%02d:%02d:%02d", prefix, hours, minutes, seconds)
 
         if (isOvertime) {
-            tvEndTime.text = "" // Clear end time when in overtime
+            tvEndTime.text = ""
         }
     }
 
@@ -387,7 +400,21 @@ class MainActivity : Activity() {
 
     private fun updateButtonStates() {
         if (!isBound || timerService == null) return
-        // This is where you could add visual feedback (e.g., alpha) if needed
+    }
+
+    // <<< NEW: Formats a timestamp to HH:mm
+    private fun formatTimestamp(millis: Long): String {
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        return sdf.format(millis)
+    }
+
+    // <<< NEW: Load all data at once
+    private fun loadAllData() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        cigaretteCount = prefs.getInt(CIG_COUNT_KEY, 0)
+        weedCount = prefs.getInt(WEED_COUNT_KEY, 0)
+        cigEntries = prefs.getStringSet(CIG_ENTRIES_KEY, emptySet())?.toMutableList() ?: mutableListOf()
+        weedEntries = prefs.getStringSet(WEED_ENTRIES_KEY, emptySet())?.toMutableList() ?: mutableListOf()
     }
 
     override fun onDestroy() {
@@ -402,15 +429,10 @@ class MainActivity : Activity() {
 // --- Persistence Constants and Functions ---
 const val PREFS_NAME = "SmokedPrefs"
 const val CIG_COUNT_KEY = "cig_smoked_count"
-const val CIG_LAST_RESET_TIME_KEY = "cig_last_reset_time"
 const val WEED_COUNT_KEY = "weed_smoked_count"
-const val WEED_LAST_RESET_TIME_KEY = "weed_last_reset_time"
 const val LAST_APP_OPEN_KEY = "last_app_open_time"
-
-fun loadCount(context: Context, key: String): Int {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    return prefs.getInt(key, 0)
-}
+const val CIG_ENTRIES_KEY = "cig_entries_list" // <<< NEW
+const val WEED_ENTRIES_KEY = "weed_entries_list" // <<< NEW
 
 fun loadLastResetTime(context: Context, key: String): Long {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -422,10 +444,11 @@ fun saveLastResetTime(context: Context, key: String, currentTime: Long) {
     prefs.edit().putLong(key, currentTime).apply()
 }
 
-fun saveSmokedData(context: Context, countKey: String, count: Int, timeKey: String, currentTime: Long) {
+// <<< NEW: Consolidated save function for count and entries
+fun saveEntryData(context: Context, countKey: String, count: Int, entriesKey: String, entries: Set<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit()
         .putInt(countKey, count)
-        .putLong(timeKey, currentTime)
+        .putStringSet(entriesKey, entries)
         .apply()
 }
