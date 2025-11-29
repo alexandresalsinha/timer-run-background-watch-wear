@@ -219,14 +219,14 @@ class MainActivity : Activity() {
     private lateinit var btnReset: ImageButton
     private lateinit var tvCigCount: TextView
     private lateinit var tvWeedCount: TextView
-    private lateinit var tvCigEntries: TextView // <<< NEW
-    private lateinit var tvWeedEntries: TextView // <<< NEW
+    private lateinit var tvCigEntries: TextView
+    private lateinit var tvWeedEntries: TextView
 
     // State
     private var cigaretteCount: Int = 0
     private var weedCount: Int = 0
-    private var cigEntries = mutableListOf<String>() // <<< NEW
-    private var weedEntries = mutableListOf<String>() // <<< NEW
+    private var cigEntries = mutableListOf<String>()
+    private var weedEntries = mutableListOf<String>()
     private var timerService: TimerService? = null
     private var isBound = false
 
@@ -268,15 +268,15 @@ class MainActivity : Activity() {
         btnReset = findViewById(R.id.btnReset)
         tvCigCount = findViewById(R.id.tvCigCount)
         tvWeedCount = findViewById(R.id.tvWeedCount)
-        tvCigEntries = findViewById(R.id.tvCigEntries) // <<< NEW
-        tvWeedEntries = findViewById(R.id.tvWeedEntries) // <<< NEW
+        tvCigEntries = findViewById(R.id.tvCigEntries)
+        tvWeedEntries = findViewById(R.id.tvWeedEntries)
 
         // Load persistent data
         loadAllData()
 
         checkAndResetCountersIfNeeded()
         updateCounterUI()
-        updateEntriesUI() // <<< NEW
+        updateEntriesUI()
 
         // Bind to the timer service
         val serviceIntent = Intent(this, TimerService::class.java)
@@ -289,20 +289,20 @@ class MainActivity : Activity() {
         btnCigarette.setOnClickListener {
             val currentTime = System.currentTimeMillis()
             cigaretteCount++
-            cigEntries.add(formatTimestamp(currentTime)) // <<< NEW
+            cigEntries.add(formatTimestamp(currentTime))
             saveEntryData(this, CIG_COUNT_KEY, cigaretteCount, CIG_ENTRIES_KEY, cigEntries.toSet())
             updateCounterUI()
-            updateEntriesUI() // <<< NEW
+            updateEntriesUI()
             restartTimer()
         }
 
         btnWeed.setOnClickListener {
             val currentTime = System.currentTimeMillis()
             weedCount++
-            weedEntries.add(formatTimestamp(currentTime)) // <<< NEW
+            weedEntries.add(formatTimestamp(currentTime))
             saveEntryData(this, WEED_COUNT_KEY, weedCount, WEED_ENTRIES_KEY, weedEntries.toSet())
             updateCounterUI()
-            updateEntriesUI() // <<< NEW
+            updateEntriesUI()
             restartTimer()
         }
 
@@ -340,12 +340,12 @@ class MainActivity : Activity() {
     private fun performReset() {
         cigaretteCount = 0
         weedCount = 0
-        cigEntries.clear() // <<< NEW
-        weedEntries.clear() // <<< NEW
+        cigEntries.clear()
+        weedEntries.clear()
         saveEntryData(this, CIG_COUNT_KEY, cigaretteCount, CIG_ENTRIES_KEY, cigEntries.toSet())
         saveEntryData(this, WEED_COUNT_KEY, weedCount, WEED_ENTRIES_KEY, weedEntries.toSet())
         updateCounterUI()
-        updateEntriesUI() // <<< NEW
+        updateEntriesUI()
     }
 
     private fun updateCounterUI() {
@@ -353,7 +353,6 @@ class MainActivity : Activity() {
         tvWeedCount.text = "Weed: $weedCount"
     }
 
-    // <<< NEW: Function to update the entry logs
     private fun updateEntriesUI() {
         tvCigEntries.text = if (cigEntries.isNotEmpty()) "Cigarettes:\n" + cigEntries.joinToString("\n") else ""
         tvWeedEntries.text = if (weedEntries.isNotEmpty()) "Weed:\n" + weedEntries.joinToString("\n") else ""
@@ -385,9 +384,10 @@ class MainActivity : Activity() {
         val prefix = if (isOvertime) "-" else ""
         timerText.text = String.format(Locale.getDefault(), "%s%02d:%02d:%02d", prefix, hours, minutes, seconds)
 
-        if (isOvertime) {
-            tvEndTime.text = ""
-        }
+        // MODIFIED: This 'if' block has been removed to keep the text visible.
+        // if (isOvertime) {
+        //     tvEndTime.text = ""
+        // }
     }
 
     private fun updateEndTimeDisplay() {
@@ -402,13 +402,11 @@ class MainActivity : Activity() {
         if (!isBound || timerService == null) return
     }
 
-    // <<< NEW: Formats a timestamp to HH:mm
     private fun formatTimestamp(millis: Long): String {
         val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
         return sdf.format(millis)
     }
 
-    // <<< NEW: Load all data at once
     private fun loadAllData() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         cigaretteCount = prefs.getInt(CIG_COUNT_KEY, 0)
@@ -426,13 +424,13 @@ class MainActivity : Activity() {
     }
 }
 
-// --- Persistence Constants and Functions ---
+// --- Persistence Constants and Functions (Unchanged) ---
 const val PREFS_NAME = "SmokedPrefs"
 const val CIG_COUNT_KEY = "cig_smoked_count"
 const val WEED_COUNT_KEY = "weed_smoked_count"
 const val LAST_APP_OPEN_KEY = "last_app_open_time"
-const val CIG_ENTRIES_KEY = "cig_entries_list" // <<< NEW
-const val WEED_ENTRIES_KEY = "weed_entries_list" // <<< NEW
+const val CIG_ENTRIES_KEY = "cig_entries_list"
+const val WEED_ENTRIES_KEY = "weed_entries_list"
 
 fun loadLastResetTime(context: Context, key: String): Long {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -444,7 +442,6 @@ fun saveLastResetTime(context: Context, key: String, currentTime: Long) {
     prefs.edit().putLong(key, currentTime).apply()
 }
 
-// <<< NEW: Consolidated save function for count and entries
 fun saveEntryData(context: Context, countKey: String, count: Int, entriesKey: String, entries: Set<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit()
